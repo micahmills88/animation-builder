@@ -2,6 +2,8 @@
 
 A game-developer-friendly UI on top of NVIDIA's [Kimodo](https://github.com/nv-tlabs/kimodo) text-to-motion model. Type a prompt, upload your Mixamo-rigged FBX, and generate a single animated FBX that drops straight into Unity or Unreal. The built-in viewer lets you scrub, auto-trim a clean loop, blend the seam, regenerate the whole clip in place, and download the result.
 
+> 📖 **[Read the tutorial](docs/TUTORIAL.md)** for a full walk-through of the UI with screenshots, prompting tips, and explanations of the blend-vs-bridge loop-closure modes.
+
 ```
   prompt + your Mixamo-rigged FBX
            │
@@ -85,7 +87,7 @@ In the UI:
 
 1. Type a prompt describing the motion. The prompt is handed to Kimodo verbatim — no personality composition, no prompt massaging. Be direct: `A person jogs forward at a steady pace, arms relaxed, even stride`.
 2. Set seed and duration.
-3. Upload a Mixamo-rigged FBX. Export from Mixamo as **"T-pose with skin"** so textures are embedded.
+3. Upload a Mixamo-rigged FBX. The input has to be a humanoid mesh that's **already been rigged** (standard Mixamo skeleton with `mixamorig:*` bone names — either auto-rigged at <https://www.mixamo.com> or from Adobe's character packs). Raw un-rigged meshes won't retarget. Export from Mixamo as **"T-pose with skin"** so textures are embedded.
 4. Click *Generate*.
 
 From the CLI:

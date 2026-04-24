@@ -72,8 +72,9 @@ form input, form textarea, form select {
 form input[type=file] { padding: 6px; }
 form input[type=number] { width: 100px; }
 form textarea { resize: vertical; min-height: 60px; font-family: inherit; }
-.row-grid { display: grid; grid-template-columns: 1fr 1fr 100px; gap: 12px; }
+.row-grid { display: grid; grid-template-columns: 110px 110px 1fr; gap: 12px; }
 .row-grid label { margin-bottom: 0; }
+.row-grid select { min-width: 0; }
 
 button {
   background: #232830;
