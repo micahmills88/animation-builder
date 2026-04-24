@@ -1,0 +1,18 @@
+# Core service (unchanged from pre-rewrite).
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+
+# Added for the NPZ-direct pipeline (Phase 1 clean-slate rewrite).
+# numpy is already pulled in transitively by kimodo/torch, but pin it explicitly
+# here so the `app/` modules can be installed and imported in a non-kimodo venv
+# for testing.
+numpy>=1.26
+scipy>=1.11
+
+# FBX SDK Python bindings are installed separately in
+# docker/animation-service.Dockerfile because Autodesk doesn't publish them on
+# standard PyPI — they come from Inria's GitLab index. Keep that line in the
+# Dockerfile; duplicating it here with --extra-index-url doesn't work for
+# environments that use `pip install -r requirements.txt` without passing
+# extra-index-url on the command line.

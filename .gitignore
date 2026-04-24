@@ -1,0 +1,51 @@
+# Generated animation outputs now live in a named Docker volume, not a
+# host directory. This rule is kept to guard against accidental local
+# outputs/ directories from older checkouts or manual bind-mount dev.
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local environment (HF token lives here — don't commit)
+.env
+.env.local
+
+# Claude Code local settings (per-user, not part of the project)
+.claude/
+
+# Personal working notes / feature scratchpad — never meant to ship publicly.
+docs/FEATURE-IDEAS.md
+
+# Stray Blender intermediate (pipeline is Blender-free but guard anyway)
+*.blend1
+*.blend2
+
+# Kimodo scratch — per-job NPZ lives under outputs/ (already ignored).
+*.npz
+!tests/fixtures/*.npz
+
+# Sibling repo upstream's Dockerfile expects in its build context.
+# Plain-cloned by scripts/start.sh — not a submodule because git refuses
+# nested submodules inside upstream/ (which is itself a submodule).
+/upstream/kimodo-viser/

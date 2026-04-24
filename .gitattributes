@@ -1,0 +1,26 @@
+# Default to LF for everything text. Prevents Windows git from converting
+# line endings on checkout, which breaks shell scripts that run inside Linux
+# containers (the upstream Kimodo image's docker-entrypoint.sh is the
+# canonical victim — bash sees `bash\r` as the interpreter and exits 127).
+* text=auto eol=lf
+
+# Force LF for any shell script anywhere in the tree, including the upstream
+# submodule's own scripts checked out by our clone.
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Force LF for Dockerfiles, docker-entrypoints, and YAML so container builds
+# are deterministic regardless of host OS.
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
+docker-entrypoint* text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binary types — never touch.
+*.fbx binary
+*.bvh binary
+*.npz binary
+*.zip binary
+*.png binary
+*.jpg binary

@@ -1,0 +1,162 @@
+# Top-level compose for animation-builder.
+#
+# Three services:
+#   * text-encoder      — upstream Kimodo LLM2Vec text encoder (port 9550)
+#   * animation-service — our FastAPI UI + retargeter (port 7870)
+#   * demo              — upstream Kimodo single-clip Viser demo (port 7860)
+#
+# Build order matters: the upstream image `kimodo:1.0` is built by the
+# text-encoder service and consumed as a base by animation-service. Use
+# scripts/start.sh on first run to build in the right order, or build
+# manually in sequence:
+#     docker compose build text-encoder
+#     docker compose build animation-service
+#     docker compose up
+#
+# HuggingFace token: LLM2Vec (used by text-encoder) is a gated Meta model.
+# Copy .env.example to .env and fill in your HF read-only token. The token
+# is passed to both services via the HF_TOKEN env var.
+
+services:
+  text-encoder:
+    build:
+      context: ./upstream
+      dockerfile: Dockerfile
+    image: kimodo:1.0
+    container_name: text-encoder
+    working_dir: /workspace
+    # Patched launcher: forces Gradio queue default_concurrency_limit=1 so
+    # the LLM2Vec model's CUDA tensors stay in the main process. Bare
+    # upstream command would be `python -m kimodo.scripts.run_text_encoder_server`.
+    command: python /workspace/text_encoder_patch.py
+    volumes:
+      - ./upstream:/workspace
+      - hf_cache:/opt/hf-cache
+      - ./app/text_encoder_patch.py:/workspace/text_encoder_patch.py:ro
+    ports:
+      - "9550:9550"
+    environment:
+      - HF_HOME=/opt/hf-cache
+      # LLM2Vec is gated on HF — provide a read-only token in .env.
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      # Pin to a single GPU. LLM2Vec's encode() takes a multi-GPU branch
+      # when torch.cuda.device_count() > 1 that spawns workers via
+      # multiprocessing.Pool — those workers crash on rebuild_cuda_tensor
+      # because CUDA tensor handles can't survive process boundaries the
+      # way the LLM2Vec code assumes.
+      - NVIDIA_VISIBLE_DEVICES=${GPU_DEVICE:-0}
+      - CUDA_VISIBLE_DEVICES=${GPU_DEVICE:-0}
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    shm_size: "16gb"
+    ipc: host
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "curl -fsS http://localhost:9550/ > /dev/null"]
+      interval: 3s
+      timeout: 2s
+      # Up to 10 minutes so first-run LLM2Vec download (~16 GB) finishes.
+      retries: 200
+      start_period: 30s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  animation-service:
+    build:
+      context: .
+      dockerfile: docker/animation-service.Dockerfile
+    container_name: animation-service
+    working_dir: /workspace/animation-service
+    ports:
+      - "7870:7870"
+    volumes:
+      # Output storage lives in a named volume — no host filesystem
+      # dependency. All FBX upload (POST /api/animations with the template)
+      # and download (GET /api/animations/{id}/clip) flow through the web
+      # API, which makes this deployable headless on a cloud GPU or a
+      # GB10 without needing filesystem access to the host.
+      - outputs:/workspace/animation-service/outputs
+      # HF cache shared with text-encoder via named volume.
+      - hf_cache:/opt/hf-cache
+      # Live-mount the app so iterating on Python doesn't require an image
+      # rebuild. The image's COPY'd version is overlayed at runtime.
+      - ./app:/workspace/animation-service/app:ro
+      - ./scripts:/workspace/animation-service/scripts:ro
+    environment:
+      - TEXT_ENCODER_URL=http://text-encoder:9550/
+      - HF_HOME=/opt/hf-cache
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - PYTHONPATH=/workspace/animation-service:/workspace
+      - OUTPUT_ROOT=/workspace/animation-service/outputs
+      # After the first run you can uncomment LOCAL_CACHE to skip the HF
+      # online model-check each startup (Kimodo will only use the local
+      # cache). See docs/KIMODO_REFERENCE.md footgun #12.
+      # - LOCAL_CACHE=true
+      - NVIDIA_VISIBLE_DEVICES=${GPU_DEVICE:-0}
+      - CUDA_VISIBLE_DEVICES=${GPU_DEVICE:-0}
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    shm_size: "16gb"
+    ipc: host
+    depends_on:
+      text-encoder:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Upstream Kimodo single-clip Viser demo, served alongside for
+  # comparison. Optional — can be disabled with `docker compose up
+  # animation-service text-encoder`.
+  demo:
+    image: kimodo:1.0
+    container_name: kimodo-demo
+    working_dir: /workspace
+    command: python -m kimodo.demo
+    volumes:
+      - ./upstream:/workspace
+      - hf_cache:/opt/hf-cache
+      - ./upstream/checkpoints:/workspace/checkpoints:ro
+    ports:
+      - "${DEMO_PORT:-7860}:${DEMO_PORT:-7860}"
+    environment:
+      - TEXT_ENCODER_URL=http://text-encoder:9550/
+      - SERVER_PORT=${DEMO_PORT:-7860}
+      - HF_HOME=/opt/hf-cache
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - NVIDIA_VISIBLE_DEVICES=${GPU_DEVICE:-0}
+      - CUDA_VISIBLE_DEVICES=${GPU_DEVICE:-0}
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    shm_size: "16gb"
+    ipc: host
+    depends_on:
+      text-encoder:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  # Shared HuggingFace cache — Kimodo motion checkpoint (animation-service)
+  # and LLM2Vec text encoder weights (text-encoder) coexist here so
+  # downloads happen once even if both services start fresh.
+  hf_cache: {}
+  # All per-job data (uploaded template FBX, raw Kimodo NPZ, retargeted
+  # FBX, metadata.json). Nothing on the host filesystem. To back up or
+  # migrate, use `docker run --rm -v animation-builder_outputs:/d
+  # -v $(pwd):/b alpine tar czf /b/outputs.tgz -C /d .` or
+  # `docker cp animation-service:/workspace/animation-service/outputs .`.
+  outputs: {}

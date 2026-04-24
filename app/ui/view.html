@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Animation Editor</title>
+<link rel="stylesheet" href="/ui/style.css">
+<link rel="stylesheet" href="/ui/view.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<header>
+  <h1>Animation Editor</h1>
+  <p class="muted">
+    <a href="/ui/">← back to list</a>
+    · <a id="download-link" href="#" class="muted">Download FBX</a>
+  </p>
+  <div class="settings-strip">
+    <div class="settings-prompt">
+      <span class="settings-label">Prompt</span>
+      <span id="header-prompt" class="settings-prompt-text">—</span>
+    </div>
+    <div class="settings-chips">
+      <span class="chip"><span class="chip-label">model</span> <code id="header-model">—</code></span>
+      <span class="chip"><span class="chip-label">seed</span> <code id="header-seed">—</code></span>
+      <span class="chip"><span class="chip-label">duration</span> <code id="header-duration">—</code></span>
+      <span class="chip"><span class="chip-label">frames</span> <code id="header-frames">—</code></span>
+    </div>
+  </div>
+</header>
+
+<main class="editor-main">
+  <section class="card viewer-card">
+    <div class="viewer-toolbar">
+      <span id="current-status" class="muted small">—</span>
+      <span style="flex:1"></span>
+      <label class="toolbar-chk"><input type="checkbox" id="chk-ground" checked> ground</label>
+      <label class="toolbar-chk"><input type="checkbox" id="chk-mesh" checked> mesh</label>
+      <label class="toolbar-chk"><input type="checkbox" id="chk-auto-rotate"> rotate</label>
+    </div>
+    <div id="viewer-canvas" class="viewer-canvas">
+      <div class="viewer-playhead" id="viewer-playhead" title="Click to scrub — watch the marker wrap from right to left to see the loop seam">
+        <div class="viewer-playhead-track"></div>
+        <div class="viewer-playhead-blend" id="playhead-blend"></div>
+        <div class="viewer-playhead-bridge" id="playhead-bridge"></div>
+        <div class="viewer-playhead-marker" id="playhead-marker"></div>
+        <div class="viewer-playhead-label" id="playhead-label">—</div>
+      </div>
+    </div>
+
+    <div class="timeline-panel">
+      <div class="timeline-labels">
+        <span class="tl-label-start">
+          <span class="legend-dot legend-start"></span>
+          start <code id="label-start">0</code>
+        </span>
+        <span class="tl-kept" id="label-kept">—</span>
+        <span class="tl-label-end">
+          end <code id="label-end">0</code>
+          <span class="legend-dot legend-end"></span>
+        </span>
+      </div>
+
+      <div class="timeline-track" id="timeline">
+        <div class="timeline-gradient" id="timeline-gradient"></div>
+        <div class="timeline-highlight" id="timeline-highlight"></div>
+        <div class="timeline-blend" id="timeline-blend" title="cyclic blend: these last N frames of the kept slice ease smoothly toward the start-frame pose on Save"></div>
+        <div class="timeline-bridge" id="timeline-bridge" title="bridge: N new frames appended after the end marker that SLERP toward the start-frame pose on Save"></div>
+        <div class="timeline-marker marker-start" id="marker-start">
+          <div class="marker-stem"></div>
+          <div class="marker-head">start</div>
+        </div>
+        <div class="timeline-marker marker-end" id="marker-end">
+          <div class="marker-stem"></div>
+          <div class="marker-head">end</div>
+        </div>
+        <div class="timeline-marker marker-blend" id="marker-blend" title="Blend marker — drag left to extend the blend span (more last-frames eased toward start), drag right to shrink. Sits on the end marker when blend=0. Align with a cyclical stride pattern in the gradient to blend exactly one cycle.">
+          <div class="marker-stem"></div>
+          <div class="marker-head">blend</div>
+        </div>
+      </div>
+
+      <div class="timeline-stats">
+        <span id="stats-similarity" title="summed per-joint root-relative Euclidean distance between start and end poses — lower = cleaner loop seam">seam: — rad</span>
+        <span id="stats-meta">—</span>
+        <span style="flex:1"></span>
+        <button type="button" id="btn-reset" title="Exhaustive pairwise auto-trim: compute pose distance for every (start, end) pair, keep the top-20 closest-pose pairs, pick the one with the longest span">Auto-trim</button>
+        <button type="button" id="btn-save" class="primary" title="Save — re-exports the FBX with the chosen trim + blend + bridge settings">Save</button>
+      </div>
+
+      <div class="seam-panel">
+        <div class="seam-row">
+          <label class="seam-input" title="Cyclic blend: smoothstep-ease the LAST N frames of the kept slice toward the start-frame pose. Clip length unchanged. Use for cyclic motions (jog, walk, idle) that need a clean loop seam.">
+            <span class="seam-label"><span class="seam-dot seam-dot-blend"></span> blend last</span>
+            <input type="number" id="blend-frames" min="0" max="300" step="1" value="0">
+            <span class="seam-unit muted small">frames</span>
+          </label>
+          <span id="blend-readout" class="muted small">off</span>
+        </div>
+        <div class="seam-row">
+          <label class="seam-input" title="Bridge: append N new synthesized frames that SLERP from end-pose to start-pose. Clip length grows by N. Use for one-way motions (arm raise, door open) where there's no natural cycle to blend into.">
+            <span class="seam-label"><span class="seam-dot seam-dot-bridge"></span> add bridge</span>
+            <input type="number" id="bridge-frames" min="0" max="600" step="1" value="0">
+            <span class="seam-unit muted small">frames</span>
+          </label>
+          <span id="bridge-readout" class="muted small">off</span>
+        </div>
+      </div>
+
+      <div class="regen-panel">
+        <div class="regen-header">
+          <span class="regen-label">Kimodo prompt</span>
+          <span class="regen-hint muted small">
+            Edit and click Regenerate to replace this animation with a new generation.
+            Resets trim and saved state.
+          </span>
+        </div>
+        <textarea id="regen-prompt" rows="3" spellcheck="false"></textarea>
+        <div class="regen-controls">
+          <label class="regen-inline">
+            duration (s)
+            <input type="number" id="regen-duration" min="0.5" max="30" step="0.5" value="10">
+          </label>
+          <label class="regen-inline">
+            seed
+            <input type="number" id="regen-seed" min="0" step="1">
+          </label>
+          <span style="flex:1"></span>
+          <button type="button" id="btn-regen-reset" title="Restore prompt + duration + seed to the last-saved values">Reset</button>
+          <button type="button" id="btn-regen" class="primary">Regenerate</button>
+        </div>
+      </div>
+
+      <div id="viewer-status" class="viewer-status">Loading…</div>
+    </div>
+  </section>
+
+  <section class="card overlay-card">
+    <h2>Seam preview</h2>
+    <p class="muted small">
+      Blue = start frame pose. Yellow = end frame pose. Drag the two markers
+      on the timeline until the skeletons visually overlap — that's a clean
+      loop seam.
+    </p>
+    <div id="overlay-canvas" class="overlay-canvas"></div>
+    <div class="overlay-legend">
+      <span class="legend-dot legend-start"></span><span>start</span>
+      <span class="legend-dot legend-end"></span><span>end</span>
+      <span style="flex:1"></span>
+      <span id="overlay-stats" class="overlay-stats">—</span>
+    </div>
+  </section>
+</main>
+
+<script type="module" src="/ui/view.js"></script>
+</body>
+</html>

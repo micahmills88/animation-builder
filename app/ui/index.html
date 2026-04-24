@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Animation Generator</title>
+<link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+<header>
+  <h1>Animation Generator</h1>
+  <p class="muted">Single-clip Kimodo text-to-motion. Prompt in, animation out.</p>
+</header>
+
+<main>
+  <section class="card form-card">
+    <h2>New animation</h2>
+    <form id="generate-form">
+      <label>
+        Prompt <span class="muted">(handed to Kimodo verbatim)</span>
+        <textarea name="prompt" rows="4" maxlength="800" required
+          placeholder="A person sprints forward at full speed, arms pumping, shoulders square, no turning"></textarea>
+      </label>
+      <div class="row-grid">
+        <label>
+          Seed
+          <input type="number" name="seed" value="42" required>
+        </label>
+        <label>
+          Duration (s)
+          <input type="number" name="duration_s" value="10" min="0.5" max="30" step="0.5" required>
+        </label>
+        <label>
+          Model
+          <select name="model" id="model-select"><!-- populated by app.js --></select>
+        </label>
+      </div>
+      <label>
+        Mixamo-rigged FBX template <span class="muted">(required — export from Mixamo as "T-pose with skin"; textures are embedded and preserved on the output clip)</span>
+        <input type="file" name="template_fbx" accept=".fbx,.FBX" required>
+      </label>
+
+      <button type="submit" class="primary">Generate</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Animations</h2>
+    <button id="refresh-jobs">Refresh</button>
+    <div class="table-wrap">
+      <table id="jobs-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Prompt</th>
+            <th>Model</th>
+            <th>Seed</th>
+            <th>Duration</th>
+            <th>Status</th>
+            <th>Size</th>
+            <th>Action</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script src="/ui/app.js"></script>
+</body>
+</html>

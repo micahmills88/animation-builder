@@ -1,0 +1,555 @@
+/* Editor viewer — layered on top of style.css. */
+
+.editor-main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+  gap: 12px;
+  padding: 12px 20px 28px;
+  height: calc(100vh - 140px);
+}
+@media (max-width: 1000px) {
+  .editor-main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+}
+
+/* Settings strip at the top of the editor — prompt + model/seed/duration. */
+.settings-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 8px 0 4px;
+  flex-wrap: wrap;
+}
+.settings-prompt {
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.settings-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+.settings-prompt-text {
+  font-size: 13px;
+  color: var(--text);
+  font-style: italic;
+  line-height: 1.35;
+  word-break: break-word;
+}
+.settings-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 3px 8px;
+  background: #12161e;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 11px;
+}
+.chip-label {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.chip code { color: var(--accent); font-size: 11px; }
+
+.primary-small {
+  background: var(--accent);
+  color: #06121f;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.primary-small:disabled { opacity: 0.4; cursor: default; }
+
+/* Clips sidebar */
+.clips-card { overflow-y: auto; }
+.clip-category { margin-bottom: 10px; }
+.clip-category-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.clip-btn {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text);
+  padding: 4px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.clip-btn code { color: var(--text); font-size: 12px; }
+.clip-btn:hover { background: rgba(255,255,255,0.04); }
+.clip-btn.active {
+  background: rgba(90,169,255,0.12);
+  border-color: rgba(90,169,255,0.35);
+}
+.clip-btn.active code { color: var(--accent); }
+.clip-saved-mark {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--muted);
+  display: inline-block;
+}
+.clip-saved-mark.saved {
+  background: var(--ok);
+  border-color: var(--ok);
+  box-shadow: 0 0 0 2px rgba(107,214,135,0.18);
+}
+
+/* Main viewer */
+.viewer-card {
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  min-width: 400px;
+}
+.viewer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 6px 8px;
+  font-size: 12px;
+}
+.toolbar-chk {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.toolbar-chk input { width: 13px; height: 13px; margin: 0; }
+.viewer-canvas {
+  flex: 1;
+  min-height: 320px;
+  background: #0c0e13;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.viewer-canvas canvas { display: block; width: 100%; height: 100%; }
+
+/* Real-time playhead at the top of the viewer. Updated every tick from
+   state.action.time. Click-to-scrub supported. Optional tinted zones mark
+   where the blend region and bridge region sit inside the currently
+   playing clip, so the user can see the loop seam approaching. */
+.viewer-playhead {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  right: 8px;
+  height: 8px;
+  z-index: 5;
+  cursor: pointer;
+  user-select: none;
+}
+.viewer-playhead-track {
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 14, 19, 0.72);
+  border: 1px solid rgba(50, 58, 72, 0.7);
+  border-radius: 3px;
+  pointer-events: none;
+}
+.viewer-playhead-blend,
+.viewer-playhead-bridge {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  pointer-events: none;
+  display: none;
+}
+.viewer-playhead-blend {
+  background: rgba(90, 200, 120, 0.55);
+  border-right: 1px dashed rgba(140, 230, 160, 0.9);
+  border-radius: 2px 0 0 2px;
+}
+.viewer-playhead-bridge {
+  background: rgba(230, 120, 40, 0.7);
+  border-radius: 0 2px 2px 0;
+}
+.viewer-playhead-marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: #5aa9ff;
+  box-shadow: 0 0 6px rgba(90, 169, 255, 0.9);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.viewer-playhead-label {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  color: rgba(220, 226, 235, 0.9);
+  background: rgba(12, 14, 19, 0.82);
+  padding: 1px 8px;
+  border-radius: 2px;
+  border: 1px solid rgba(50, 58, 72, 0.7);
+  pointer-events: none;
+  white-space: nowrap;
+  letter-spacing: 0.03em;
+}
+
+/* Timeline — single bar with start + end markers, like a video editor. */
+.timeline-panel {
+  padding: 12px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.timeline-labels {
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+}
+.tl-label-start, .tl-label-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tl-label-end { margin-left: auto; }
+.tl-kept {
+  flex: 1;
+  text-align: center;
+  color: var(--accent);
+}
+
+.timeline-track {
+  position: relative;
+  height: 52px;
+  background: #0c0e13;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-top: 6px;
+  user-select: none;
+  cursor: pointer;
+}
+.timeline-gradient {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background: #161a24;
+  pointer-events: none;
+}
+.timeline-highlight {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(90, 169, 255, 0.18);
+  border-left: 1px dashed rgba(90, 169, 255, 0.6);
+  border-right: 1px dashed rgba(255, 204, 77, 0.6);
+  pointer-events: none;
+}
+/* Cyclic-blend highlight: green tint over the LAST N frames INSIDE the
+   kept region, indicating those frames will be smoothstep-eased toward
+   start-pose on Save. Length scales with blend_frames. */
+.timeline-blend {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(90, 200, 120, 0.38);
+  border-right: 2px dashed rgba(140, 230, 160, 0.9);
+  pointer-events: none;
+  z-index: 1;
+  display: none;
+  overflow: hidden;
+  min-width: 3px;
+}
+.timeline-blend::after {
+  content: attr(data-label);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  color: rgba(230, 255, 235, 0.95);
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+/* Bridge indicator: bright orange strip AFTER the end marker for appended
+   new frames (one-way motions). */
+.timeline-bridge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(230, 120, 40, 0.85);
+  border-left: 2px solid rgba(255, 180, 90, 1);
+  border-right: 2px solid rgba(255, 180, 90, 1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+  z-index: 2;
+  display: none;
+  overflow: hidden;
+  min-width: 4px;
+}
+.timeline-bridge::after {
+  content: attr(data-label);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  color: rgba(255, 240, 220, 0.98);
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+/* Seam-panel with the two mode inputs stacked below the toolbar. */
+.seam-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 4px 0;
+  margin-top: 2px;
+  border-top: 1px dashed var(--border);
+}
+.seam-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.seam-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  margin: 0;
+}
+.seam-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+  min-width: 90px;
+}
+.seam-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.seam-dot-blend { background: rgba(90, 200, 120, 0.9); }
+.seam-dot-bridge { background: rgba(230, 120, 40, 1); }
+.seam-input input {
+  width: 68px;
+  background: #0c0e13;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 12px;
+}
+.seam-unit { font-size: 10px; }
+.timeline-marker {
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  width: 2px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  cursor: ew-resize;
+  z-index: 2;
+}
+.timeline-marker .marker-stem {
+  position: absolute;
+  inset: 0;
+  width: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.timeline-marker .marker-head {
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  border-radius: 2px;
+  white-space: nowrap;
+  color: #06121f;
+  font-weight: 600;
+}
+.marker-start .marker-stem { background: #4da6ff; box-shadow: 0 0 4px #4da6ff; }
+.marker-start .marker-head { background: #4da6ff; }
+.marker-end   .marker-stem { background: #ffcc4d; box-shadow: 0 0 4px #ffcc4d; }
+.marker-end   .marker-head { background: #ffcc4d; }
+
+/* Blend marker shares the stem geometry of start/end (vertical line across
+   the track) but puts its label BELOW the track instead of above, so all
+   three markers can coexist without overlap. Drag it to set blend_frames;
+   position = last non-blended frame. When blend=0, sits on end marker. */
+.marker-blend .marker-stem {
+  background: rgba(140, 230, 160, 1);
+  box-shadow: 0 0 4px rgba(140, 230, 160, 0.8);
+}
+.marker-blend .marker-head {
+  top: auto;
+  bottom: -16px;
+  background: rgba(90, 200, 120, 1);
+  color: #0a1a0e;
+}
+
+.timeline-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+}
+.timeline-stats #stats-similarity {
+  padding: 2px 8px;
+  background: #12161e;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+}
+.viewer-status {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px 4px 0;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+}
+
+/* Per-clip prompt + duration editor + Regenerate button. */
+.regen-panel {
+  margin-top: 10px;
+  padding: 10px;
+  background: #12161e;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.regen-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.regen-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+.regen-hint { flex: 1; text-align: right; }
+.regen-panel textarea {
+  width: 100%;
+  min-height: 60px;
+  background: #0c0e13;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  resize: vertical;
+}
+.regen-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.regen-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.regen-inline input {
+  width: 80px;
+  background: #0c0e13;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* Seam preview panel */
+.overlay-card {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+}
+.overlay-canvas {
+  flex: 1;
+  min-height: 380px;
+  background: #0c0e13;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 6px;
+  position: relative;
+}
+.overlay-canvas canvas { display: block; width: 100%; height: 100%; }
+.overlay-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+}
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.legend-start { background: #4da6ff; }
+.legend-end   { background: #ffcc4d; }
+.overlay-stats { text-align: right; color: var(--text); }
+
+.small { font-size: 12px; }
