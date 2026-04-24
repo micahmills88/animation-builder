@@ -4,6 +4,14 @@ A game-developer-friendly UI on top of NVIDIA's [Kimodo](https://github.com/nv-t
 
 > 📖 **[Read the tutorial](docs/TUTORIAL.md)** for a full walk-through of the UI with screenshots, prompting tips, and explanations of the blend-vs-bridge loop-closure modes.
 
+## A note on how this was built
+
+I'm a full-time software engineer. In my spare time I like to dabble in various software projects, including game development, and AI helps me fit those into evenings and weekends. This project was built to jump-start work on a hobby game: I wanted novel character animations I could create myself without relying on online sources like Mixamo, and with the ability to add my own flair and ideas.
+
+Claude Code wrote most of the Python in this repo. I spent roughly 20-30 hours across many sessions driving the design. The architecture, UI behavior, algorithm choices, and trade-offs are mine, including several mid-session pivots away from dead ends and half-working approaches that I caught while reviewing diffs and testing behavior. Claude implemented the decisions under review, often through multiple rounds of me pushing back on broken implementations and tightening UI details.
+
+If the distinction between "vibe-coded" and "AI pair-programmed with a human actually driving" matters to you, this repo is the second. If it doesn't, fair enough. Audit the code yourself or with your own agent.
+
 ```
   prompt + your Mixamo-rigged FBX
            │
@@ -149,6 +157,16 @@ docs/
   KIMODO_REFERENCE.md  file-and-line-level audit of upstream Kimodo
 upstream/              git submodule → nv-tlabs/kimodo
 ```
+
+## Credits
+
+Massive thanks to [jtydhr88](https://github.com/jtydhr88) and the [ComfyUI-Kimodo](https://github.com/jtydhr88/ComfyUI-Kimodo) project (Apache-2.0).
+
+The core NPZ → FBX retarget logic in `app/npz_to_fbx.py` is adapted from their `kimodo_retarget_fbx.py` module. The SOMA-to-Mixamo bone mapping table, the world-rotation offset math for remapping source poses into the target skeleton's rest frame, and the FBX SDK export path that preserves embedded mesh textures all originated in their code. I ported the logic into a standalone FastAPI service and fixed a couple of edge cases (notably the hips bind-position double-counting), but the core retarget math belongs upstream.
+
+Their module is self-contained and well-commented, which is why I could adapt it into this project in a weekend instead of a month. That's the kind of open-source work that makes other open-source work possible.
+
+Thanks also to the [Kimodo team at NVIDIA Toronto AI Lab](https://github.com/nv-tlabs/kimodo) (Apache-2.0 code + NVIDIA Open Model License on weights) for open-sourcing a genuinely useful text-to-motion model with licensing that actually lets you ship something.
 
 ## References
 

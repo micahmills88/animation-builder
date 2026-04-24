@@ -97,6 +97,23 @@ def _safe_filename(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "_", s).strip("_") or "unnamed"
 
 
+_JOB_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+
+
+def _validate_job_id(job_id: str) -> None:
+    """Reject anything that isn't a 32-char lowercase hex string.
+
+    All job IDs are server-assigned via ``uuid.uuid4().hex`` (see
+    ``create_animation``), so any deviation from that shape is either
+    an old/stale reference or a path-traversal attempt. The filesystem
+    layout is ``outputs/jobs/<job_id>/...`` and a malicious ``job_id``
+    like ``..`` or ``../something`` would point outside the jobs
+    directory; validation here prevents that before any Path math.
+    """
+    if not _JOB_ID_RE.fullmatch(job_id):
+        raise HTTPException(400, "invalid job id")
+
+
 def _validate_generation_params(prompt: str, duration_s: float, model: str) -> None:
     if not prompt:
         raise HTTPException(400, "prompt is required")
@@ -246,6 +263,7 @@ async def create_animation(
 
 @app.post("/api/animations/{job_id}/rerun")
 async def rerun_animation(job_id: str) -> dict[str, Any]:
+    _validate_job_id(job_id)
     import shutil
 
     old = load_job(OUTPUT_ROOT, job_id)
@@ -290,6 +308,7 @@ async def animations() -> list[dict[str, Any]]:
 
 @app.get("/api/animations/{job_id}")
 async def animation_detail(job_id: str) -> dict[str, Any]:
+    _validate_job_id(job_id)
     meta = load_job(OUTPUT_ROOT, job_id)
     if not meta:
         raise HTTPException(404, "Unknown job id")
@@ -298,6 +317,7 @@ async def animation_detail(job_id: str) -> dict[str, Any]:
 
 @app.delete("/api/animations/{job_id}")
 async def delete_animation(job_id: str) -> dict[str, Any]:
+    _validate_job_id(job_id)
     import shutil
 
     meta = load_job(OUTPUT_ROOT, job_id)
@@ -315,6 +335,7 @@ async def delete_animation(job_id: str) -> dict[str, Any]:
 
 @app.get("/api/animations/{job_id}/clip")
 async def clip_fbx(job_id: str) -> FileResponse:
+    _validate_job_id(job_id)
     meta = load_job(OUTPUT_ROOT, job_id)
     if not meta:
         raise HTTPException(404, "Unknown job id")
@@ -334,6 +355,7 @@ async def clip_fbx(job_id: str) -> FileResponse:
 
 @app.get("/api/animations/{job_id}/editor-data")
 async def clip_editor_data(job_id: str) -> dict[str, Any]:
+    _validate_job_id(job_id)
     """Pose data + trim state the browser editor needs.
 
     ``posed_joints`` is returned flattened so the browser can recompute
@@ -525,6 +547,7 @@ async def animation_regenerate(
     seed: int = Form(...),
     model: str | None = Form(None),
 ) -> dict[str, Any]:
+    _validate_job_id(job_id)
     prompt = (prompt or "").strip()
     if model is None:
         # If caller didn't send a model, keep the existing one.
@@ -558,6 +581,7 @@ async def animation_trim(
     is re-exported with the (optionally) cyclic-blended slice plus any
     bridge frames appended, and ``saved`` flips True. When False the
     markers are stored but the FBX stays as-is — cheap preview path."""
+    _validate_job_id(job_id)
     meta = load_job(OUTPUT_ROOT, job_id)
     if not meta:
         raise HTTPException(404, "Unknown job id")
@@ -604,6 +628,7 @@ async def animation_trim(
 
 @app.get("/api/animations/{job_id}/template")
 async def job_template(job_id: str) -> FileResponse:
+    _validate_job_id(job_id)
     meta = load_job(OUTPUT_ROOT, job_id)
     if not meta or not meta.template_fbx:
         raise HTTPException(404, "template not found")
