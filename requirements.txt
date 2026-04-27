@@ -10,9 +10,7 @@ pydantic>=2.7
 numpy>=1.26
 scipy>=1.11
 
-# FBX SDK Python bindings are installed separately in
-# docker/animation-service.Dockerfile because Autodesk doesn't publish them on
-# standard PyPI — they come from Inria's GitLab index. Keep that line in the
-# Dockerfile; duplicating it here with --extra-index-url doesn't work for
-# environments that use `pip install -r requirements.txt` without passing
-# extra-index-url on the command line.
+# HTTP client for the retarget worker sidecar. fbxsdkpy itself is not
+# installed here — it lives in the worker image (x86 emulated under qemu)
+# because Autodesk's FBX SDK has no aarch64 build. See worker/server.py.
+httpx>=0.27

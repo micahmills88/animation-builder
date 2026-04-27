@@ -27,9 +27,23 @@ import torch
 from kimodo import load_model
 from kimodo.tools import seed_everything
 
+from app.postprocess_remote import install_remote_postprocess
+
+# Redirect kimodo's motion_correction call to the FEX worker before any
+# generation runs. Idempotent. Safe to call when motion_correction isn't
+# installed in this image — install_remote_postprocess will noop with a
+# warning.
+install_remote_postprocess()
+
 
 DEFAULT_MODEL_NAME = os.environ.get("KIMODO_MODEL", "Kimodo-SOMA-RP-v1.1").split("/")[-1]
 DEFAULT_DIFFUSION_STEPS = int(os.environ.get("KIMODO_DIFFUSION_STEPS", "100"))
+
+# Post-processing (foot-contact correction + motion smoothing) is on by
+# default. On aarch64 it works because docker/kimodo-base.Dockerfile patches
+# MotionCorrection's SIMD.h to use simde, mapping Intel intrinsics to NEON
+# at compile time. Set KIMODO_POST_PROCESSING=0 to disable for debugging.
+DEFAULT_POST_PROCESSING = os.environ.get("KIMODO_POST_PROCESSING", "1").strip() in ("1", "true", "yes")
 
 
 @dataclass
@@ -107,7 +121,7 @@ class KimodoRuntime:
         diffusion_steps: int = DEFAULT_DIFFUSION_STEPS,
         cfg_weight_text: float = 2.0,
         cfg_weight_constraint: float = 2.0,
-        post_processing: bool = True,
+        post_processing: bool = DEFAULT_POST_PROCESSING,
     ) -> dict[str, np.ndarray]:
         """Generate one clip. Single prompt, single sample, no multi-segment splitting.
 

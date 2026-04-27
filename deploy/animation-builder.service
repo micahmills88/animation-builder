@@ -1,0 +1,30 @@
+[Unit]
+# Auto-start the animation-builder Docker stack at boot.
+#
+# Install on the GB10 with:
+#   sudo cp /opt/animation-builder/deploy/animation-builder.service \
+#           /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now animation-builder.service
+#
+# The compose stack itself uses `restart: unless-stopped` so containers
+# come back up on Docker daemon restart or container crash. This unit
+# handles the host-reboot case (containers stay down if `docker compose
+# down` was issued explicitly).
+
+Description=Animation Builder Docker Compose stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/animation-builder
+# Skip the optional `demo` service — saves ~20GB resident memory on a
+# daemon deployment. Add it back if you want the upstream Viser demo too.
+ExecStart=/usr/bin/docker compose up -d animation-service text-encoder retarget-worker
+ExecStop=/usr/bin/docker compose down
+
+[Install]
+WantedBy=multi-user.target

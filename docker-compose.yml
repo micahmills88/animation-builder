@@ -1,27 +1,30 @@
 # Top-level compose for animation-builder.
 #
-# Three services:
-#   * text-encoder      — upstream Kimodo LLM2Vec text encoder (port 9550)
-#   * animation-service — our FastAPI UI + retargeter (port 7870)
-#   * demo              — upstream Kimodo single-clip Viser demo (port 7860)
+# Services:
+#   * binfmt-init       — one-shot; registers x86_64 binfmt so qemu-user runs
+#                         the retarget-worker on aarch64 hosts (the GB10).
+#   * text-encoder      — upstream Kimodo LLM2Vec text encoder (port 9550, GPU)
+#   * retarget-worker   — x86 sidecar running fbxsdkpy under qemu emulation;
+#                         called over HTTP from animation-service. CPU only.
+#   * animation-service — our FastAPI UI + retarget client (port 7870, GPU)
+#   * demo              — upstream Kimodo single-clip Viser demo (port 7860,
+#                         optional, omit from `up` to skip)
 #
-# Build order matters: the upstream image `kimodo:1.0` is built by the
-# text-encoder service and consumed as a base by animation-service. Use
-# scripts/start.sh on first run to build in the right order, or build
-# manually in sequence:
+# Build order matters: text-encoder builds the upstream `kimodo:1.0` base
+# image that animation-service consumes. Use scripts/start.sh on first run,
+# or build manually:
 #     docker compose build text-encoder
-#     docker compose build animation-service
-#     docker compose up
+#     docker compose build animation-service retarget-worker
+#     docker compose up -d animation-service text-encoder retarget-worker
 #
 # HuggingFace token: LLM2Vec (used by text-encoder) is a gated Meta model.
-# Copy .env.example to .env and fill in your HF read-only token. The token
-# is passed to both services via the HF_TOKEN env var.
+# Copy .env.example to .env and fill in your HF read-only token.
 
 services:
   text-encoder:
     build:
-      context: ./upstream
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/kimodo-base.Dockerfile
     image: kimodo:1.0
     container_name: text-encoder
     working_dir: /workspace
@@ -37,19 +40,25 @@ services:
       - "9550:9550"
     environment:
       - HF_HOME=/opt/hf-cache
-      # LLM2Vec is gated on HF — provide a read-only token in .env.
       - HF_TOKEN=${HF_TOKEN:-}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
       # Pin to a single GPU. LLM2Vec's encode() takes a multi-GPU branch
       # when torch.cuda.device_count() > 1 that spawns workers via
       # multiprocessing.Pool — those workers crash on rebuild_cuda_tensor
-      # because CUDA tensor handles can't survive process boundaries the
-      # way the LLM2Vec code assumes.
+      # because CUDA tensor handles can't survive process boundaries.
       - NVIDIA_VISIBLE_DEVICES=${GPU_DEVICE:-0}
       - CUDA_VISIBLE_DEVICES=${GPU_DEVICE:-0}
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Run as root inside the container so the gosu drop in upstream's
+      # docker-entrypoint.sh skips creating a HOST_UID user. Otherwise the
+      # entrypoint stats /workspace, gets mdmills' UID, then drops to that
+      # user — but the named hf_cache volume is owned by root inside the
+      # container and writes fail with PermissionError on first HF download.
+      - HOST_UID=0
+      - HOST_GID=0
     shm_size: "16gb"
     ipc: host
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "bash", "-lc", "curl -fsS http://localhost:9550/ > /dev/null"]
       interval: 3s
@@ -64,6 +73,40 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  # FBX retarget sidecar: runs the FBX SDK Python bindings (Autodesk has no
+  # aarch64 build) under FEX-Emu binary translation. The container itself
+  # is aarch64 native — FEX is installed natively and runs the x86 python
+  # process inside the container as a single FEX-emulated subprocess.
+  # CPU only, no GPU access. Receives NPZ + template FBX over HTTP from
+  # animation-service and returns the retargeted FBX bytes.
+  #
+  # FEX's binary recompiler (custom IR + direct ARM64 codegen) is faster
+  # than qemu-user's TCG splatter-JIT for the kind of CPU-bound serialization
+  # work fbxsdkpy does — community benchmarks show 2-3x. No --platform pin
+  # needed (the container is native aarch64); no host binfmt registration
+  # needed (FEX runs in-container via FEXBash).
+  retarget-worker:
+    build:
+      context: .
+      dockerfile: docker/retarget-worker.Dockerfile
+    image: animation-builder/retarget-worker:2.0
+    container_name: retarget-worker
+    # Internal port only — animation-service reaches it via the compose
+    # network DNS (http://retarget-worker:9560). No host bind needed.
+    expose:
+      - "9560"
+    shm_size: "1gb"
+    restart: unless-stopped
+    healthcheck:
+      # Healthcheck runs in the outer aarch64 container (no FEX), so use
+      # native curl rather than a Python that doesn't exist outside the
+      # x86 rootfs. Fast and cheap.
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://localhost:9560/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
 
   animation-service:
     build:
@@ -80,14 +123,18 @@ services:
       # API, which makes this deployable headless on a cloud GPU or a
       # GB10 without needing filesystem access to the host.
       - outputs:/workspace/animation-service/outputs
-      # HF cache shared with text-encoder via named volume.
       - hf_cache:/opt/hf-cache
-      # Live-mount the app so iterating on Python doesn't require an image
-      # rebuild. The image's COPY'd version is overlayed at runtime.
+      # Live-mount the app + worker so iterating on Python doesn't require
+      # an image rebuild. The image's COPY'd version is overlayed at runtime.
       - ./app:/workspace/animation-service/app:ro
+      - ./worker:/workspace/worker:ro
       - ./scripts:/workspace/animation-service/scripts:ro
     environment:
       - TEXT_ENCODER_URL=http://text-encoder:9550/
+      # Where animation-service reaches the x86 retarget sidecar. Set to a
+      # different URL only if you're running the worker out-of-process for
+      # debugging.
+      - RETARGET_URL=http://retarget-worker:9560/retarget
       - HF_HOME=/opt/hf-cache
       - HF_TOKEN=${HF_TOKEN:-}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
@@ -100,10 +147,28 @@ services:
       - NVIDIA_VISIBLE_DEVICES=${GPU_DEVICE:-0}
       - CUDA_VISIBLE_DEVICES=${GPU_DEVICE:-0}
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Run as root inside the container so the gosu drop in upstream's
+      # docker-entrypoint.sh skips creating a HOST_UID user. Otherwise the
+      # entrypoint stats /workspace, gets mdmills' UID, then drops to that
+      # user — but the named hf_cache volume is owned by root inside the
+      # container and writes fail with PermissionError on first HF download.
+      - HOST_UID=0
+      - HOST_GID=0
+      # Post-processing is back ON. The simde -> NEON port produced wrong
+      # cross products (broken foot orientation), so animation-service no
+      # longer relies on the in-process motion_correction. Instead it
+      # monkey-patches motion_correction.correct_motion to POST to
+      # retarget-worker (FEX-Emu), where motion_correction is built
+      # natively for x86 — no NEON guesswork. See app/postprocess_remote.py.
+      - KIMODO_POST_PROCESSING=1
+      - POSTPROCESS_URL=http://retarget-worker:9560/postprocess
     shm_size: "16gb"
     ipc: host
+    restart: unless-stopped
     depends_on:
       text-encoder:
+        condition: service_healthy
+      retarget-worker:
         condition: service_healthy
     deploy:
       resources:
@@ -114,8 +179,7 @@ services:
               capabilities: [gpu]
 
   # Upstream Kimodo single-clip Viser demo, served alongside for
-  # comparison. Optional — can be disabled with `docker compose up
-  # animation-service text-encoder`.
+  # comparison. Optional — omit from `docker compose up` to skip.
   demo:
     image: kimodo:1.0
     container_name: kimodo-demo
@@ -136,8 +200,16 @@ services:
       - NVIDIA_VISIBLE_DEVICES=${GPU_DEVICE:-0}
       - CUDA_VISIBLE_DEVICES=${GPU_DEVICE:-0}
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Run as root inside the container so the gosu drop in upstream's
+      # docker-entrypoint.sh skips creating a HOST_UID user. Otherwise the
+      # entrypoint stats /workspace, gets mdmills' UID, then drops to that
+      # user — but the named hf_cache volume is owned by root inside the
+      # container and writes fail with PermissionError on first HF download.
+      - HOST_UID=0
+      - HOST_GID=0
     shm_size: "16gb"
     ipc: host
+    restart: unless-stopped
     depends_on:
       text-encoder:
         condition: service_healthy
